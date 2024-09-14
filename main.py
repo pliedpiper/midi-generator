@@ -117,16 +117,19 @@ def generate_chord_progression(scale_notes, progression_pattern, rhythm_pattern,
         chords.append({'notes': chord, 'duration': duration, 'velocity': default_velocity})
     return chords
 
-def generate_bass_line(chord_progression, bass_octave=2):
+def generate_bass_line(chord_progression, time_signature, total_measures, bass_octave=2):
     """
-    Generates a bass line based on the root notes of the chord progression.
+    Generates a bass line with notes the length of a measure.
     """
     bass_line = []
     default_velocity = 100  # Default velocity
+    beats_per_measure, _ = map(int, time_signature.split('/'))
+    measure_duration = beats_per_measure * 1  # Each beat is duration 1
 
-    for chord in chord_progression:
+    for measure in range(total_measures):
+        chord = chord_progression[measure * beats_per_measure]
         root_note = chord['notes'][0] - 12 * (4 - bass_octave)  # Adjust to bass octave
-        bass_line.append({'note': root_note, 'duration': chord['duration'], 'velocity': default_velocity})
+        bass_line.append({'note': root_note, 'duration': measure_duration, 'velocity': default_velocity})
     return bass_line
 
 def generate_drum_pattern(length, complexity='simple'):
@@ -216,55 +219,30 @@ def create_drum_midi_file(drum_pattern, output_dir, filename="drum_pattern.mid",
     with open(output_path, "wb") as output_file:
         midi.writeFile(output_file)
 
-def create_combined_midi_file(chord_tracks, melody_tracks, drum_pattern, bass_tracks, output_dir, filename="song.mid", tempo=120, time_signature="4/4"):
+def create_combined_midi_file(tracks, drum_pattern, output_dir, filename="song.mid", tempo=120, time_signature="4/4"):
     """
     Creates a combined MIDI file with chords, melody, bass, and drums.
     """
-    midi = MIDIFile(4)  # Four tracks: Chords, Melody, Bass, Drums
+    midi = MIDIFile(len(tracks) + 1)  # Tracks + Drums
 
-    # Chords Track
-    chord_track_num = 0
-    chord_track = chord_tracks[0]
-    midi.addTrackName(chord_track_num, 0, chord_track['name'])
-    midi.addTempo(chord_track_num, 0, tempo)
     beats_per_measure, beat_unit = map(int, time_signature.split('/'))
-    midi.addTimeSignature(chord_track_num, 0, beats_per_measure, int(beat_unit ** 0.5), 24)
-    midi.addProgramChange(chord_track_num, chord_track['channel'], 0, chord_track['instrument'])
 
-    time = 0
-    for event in chord_track['events']:
-        for note in event['notes']:
-            midi.addNote(chord_track_num, chord_track['channel'], note, time, event['duration'], event['velocity'])
-        time += event['duration']
+    for track_num, track in enumerate(tracks):
+        midi.addTrackName(track_num, 0, track['name'])
+        midi.addTempo(track_num, 0, tempo)
+        midi.addTimeSignature(track_num, 0, beats_per_measure, int(beat_unit ** 0.5), 24)
+        midi.addProgramChange(track_num, track['channel'], 0, track['instrument'])
 
-    # Melody Track
-    melody_track_num = 1
-    melody_track = melody_tracks[0]
-    midi.addTrackName(melody_track_num, 0, melody_track['name'])
-    midi.addTempo(melody_track_num, 0, tempo)
-    midi.addTimeSignature(melody_track_num, 0, beats_per_measure, int(beat_unit ** 0.5), 24)
-    midi.addProgramChange(melody_track_num, melody_track['channel'], 0, melody_track['instrument'])
-
-    time = 0
-    for event in melody_track['events']:
-        midi.addNote(melody_track_num, melody_track['channel'], event['note'], time, event['duration'], event['velocity'])
-        time += event['duration']
-
-    # Bass Track
-    bass_track_num = 2
-    bass_track = bass_tracks[0]
-    midi.addTrackName(bass_track_num, 0, bass_track['name'])
-    midi.addTempo(bass_track_num, 0, tempo)
-    midi.addTimeSignature(bass_track_num, 0, beats_per_measure, int(beat_unit ** 0.5), 24)
-    midi.addProgramChange(bass_track_num, bass_track['channel'], 0, bass_track['instrument'])
-
-    time = 0
-    for event in bass_track['events']:
-        midi.addNote(bass_track_num, bass_track['channel'], event['note'], time, event['duration'], event['velocity'])
-        time += event['duration']
+        for event in track['events']:
+            start_time = event.get('start_time', 0)
+            if 'note' in event:
+                midi.addNote(track_num, track['channel'], event['note'], start_time, event['duration'], event['velocity'])
+            elif 'notes' in event:
+                for note in event['notes']:
+                    midi.addNote(track_num, track['channel'], note, start_time, event['duration'], event['velocity'])
 
     # Drums Track
-    drum_track_num = 3
+    drum_track_num = len(tracks)
     midi.addTrackName(drum_track_num, 0, 'Drums')
     midi.addTempo(drum_track_num, 0, tempo)
     midi.addTimeSignature(drum_track_num, 0, beats_per_measure, int(beat_unit ** 0.5), 24)
@@ -284,21 +262,21 @@ def create_midi_file(tracks, output_dir, filename="composition.mid", tempo=120, 
     Creates a MIDI file from the given tracks and saves it in the specified directory.
     """
     midi = MIDIFile(len(tracks))
+    beats_per_measure, beat_unit = map(int, time_signature.split('/'))
+
     for track_num, track in enumerate(tracks):
         midi.addTrackName(track_num, 0, track['name'])
         midi.addTempo(track_num, 0, tempo)
-        beats_per_measure, beat_unit = map(int, time_signature.split('/'))
         midi.addTimeSignature(track_num, 0, beats_per_measure, int(beat_unit ** 0.5), 24)
         midi.addProgramChange(track_num, track['channel'], 0, track['instrument'])
 
-        time = 0
         for event in track['events']:
+            start_time = event.get('start_time', 0)
             if 'note' in event:
-                midi.addNote(track_num, track['channel'], event['note'], time, event['duration'], event['velocity'])
+                midi.addNote(track_num, track['channel'], event['note'], start_time, event['duration'], event['velocity'])
             elif 'notes' in event:
                 for note in event['notes']:
-                    midi.addNote(track_num, track['channel'], note, time, event['duration'], event['velocity'])
-            time += event['duration']
+                    midi.addNote(track_num, track['channel'], note, start_time, event['duration'], event['velocity'])
 
     # Ensure the output directory exists
     os.makedirs(output_dir, exist_ok=True)
@@ -318,12 +296,16 @@ def main():
 
     elif generation_type == 'song':
         # Generate a song with drums, chords, melody, and optional bass
-        root_note = random.choice(list(note_name_to_number.keys()))
-        scale_type = random.choice(list(scale_intervals.keys()))
+        root_note = input("Enter the root note for the song (e.g., C, D#, F): ").strip()
+        print("Available scales/modes:")
+        for scale in scale_intervals.keys():
+            print(f"- {scale}")
+        scale_type = input("Enter the scale/mode for the song: ").strip().lower()
         octaves = 1
         tempo = random.randint(60, 140)
         time_signature = '4/4'
-        length = 4  # Number of measures
+        total_length = 32  # Total number of measures
+        section_length = 8  # Measures per section (Verse/Chorus)
 
         print(f"Generating song in key: {root_note} {scale_type}, Tempo: {tempo} BPM")
 
@@ -334,64 +316,151 @@ def main():
             return
 
         # Generate rhythm pattern with notes on every beat
-        rhythm_pattern = generate_steady_rhythm(length, time_signature)
+        beats_per_measure, _ = map(int, time_signature.split('/'))
+        rhythm_pattern = generate_steady_rhythm(total_length, time_signature)
 
-        # Generate chords
-        progression_pattern = [random.randint(1, 7) for _ in range(length * 1)]  # One chord per measure
-        chord_size = 3  # Triads
-        chords = generate_chord_progression(scale_notes, progression_pattern, rhythm_pattern, chord_size=chord_size)
-        chord_tracks = [{
-            'name': 'Chords',
-            'channel': 0,
-            'events': chords,
-            'instrument': instruments['Acoustic Grand Piano']
-        }]
-
-        # Generate melody
-        melody_events = generate_melody(scale_notes, rhythm_pattern)
-        melody_tracks = [{
-            'name': 'Melody',
-            'channel': 1,
-            'events': melody_events,
-            'instrument': instruments['Acoustic Grand Piano']
-        }]
-
-        # Generate bass line
+        # Decide on including bass line
         include_bass = input("Include bass line? (yes/no, default 'yes'): ").strip().lower() or 'yes'
+
+        # Initialize tracks
+        chord_tracks = []
+        melody_tracks = []
         bass_tracks = []
+
+        # Define song structure: Verse (8 measures) -> Chorus (8 measures) -> Verse (8 measures) -> Chorus (8 measures)
+        sections = ['Verse', 'Chorus', 'Verse', 'Chorus']
+        current_time = 0
+
+        # Generate drum pattern for the entire song
+        drum_pattern = generate_drum_pattern(total_length, complexity='simple')
+
+        # Generate music for each section
+        for section in sections:
+            # Generate chords
+            if section == 'Verse':
+                progression_pattern = [random.randint(1, 7) for _ in range(section_length)]
+            elif section == 'Chorus':
+                progression_pattern = [random.randint(1, 7) for _ in range(section_length)]
+            # Adjust chord size if desired
+            chord_size = 3  # Triads
+            section_rhythm = generate_steady_rhythm(section_length, time_signature)
+            chords = generate_chord_progression(scale_notes, progression_pattern, section_rhythm, chord_size=chord_size)
+            for chord in chords:
+                chord['start_time'] = current_time
+                current_time += chord['duration']
+
+            chord_tracks.append({
+                'name': f'Chords',
+                'channel': 0,
+                'events': chords,
+                'instrument': instruments['Acoustic Grand Piano']
+            })
+
+            # Generate melody
+            melody_events = generate_melody(scale_notes, section_rhythm)
+            current_time_melody = current_time - sum(section_rhythm)
+            for note in melody_events:
+                note['start_time'] = current_time_melody
+                current_time_melody += note['duration']
+
+            melody_tracks.append({
+                'name': f'Melody',
+                'channel': 1,
+                'events': melody_events,
+                'instrument': instruments['Acoustic Grand Piano']
+            })
+
+            # Generate bass line
+            if include_bass == 'yes':
+                # Total measures so far
+                total_measures = int(current_time / beats_per_measure)
+                bass_events = generate_bass_line(chords, time_signature, section_length)
+                current_time_bass = current_time - sum(section_rhythm)
+                for note in bass_events:
+                    note['start_time'] = current_time_bass
+                    current_time_bass += note['duration']
+
+                bass_tracks.append({
+                    'name': f'Bass',
+                    'channel': 2,
+                    'events': bass_events,
+                    'instrument': instruments['Electric Bass (finger)']
+                })
+
+        # Combine tracks
+        combined_chord_events = []
+        for track in chord_tracks:
+            combined_chord_events.extend(track['events'])
+
+        combined_melody_events = []
+        for track in melody_tracks:
+            combined_melody_events.extend(track['events'])
+
         if include_bass == 'yes':
-            bass_events = generate_bass_line(chords)
-            bass_tracks = [{
+            combined_bass_events = []
+            for track in bass_tracks:
+                combined_bass_events.extend(track['events'])
+            bass_tracks_combined = [{
                 'name': 'Bass',
                 'channel': 2,
-                'events': bass_events,
+                'events': combined_bass_events,
                 'instrument': instruments['Electric Bass (finger)']
             }]
-
-        # Generate drums
-        complexity = 'simple'  # Could randomize this if desired
-        drum_pattern = generate_drum_pattern(length, complexity=complexity)
+        else:
+            bass_tracks_combined = []
 
         # Create song directory
-        song_folder_name = f"{root_note}_{scale_type}_{tempo}bpm_song"
+        root_note_formatted = root_note.replace('#', 'sharp').replace('b', 'flat')
+        scale_type_formatted = scale_type.replace(' ', '_')
+        song_folder_name = f"{root_note_formatted}_{scale_type_formatted}_{tempo}bpm_song"
         output_dir = os.path.join("songs", song_folder_name)
         os.makedirs(output_dir, exist_ok=True)
 
         # Create individual MIDI files
-        create_midi_file(chord_tracks, output_dir=output_dir, filename="chords.mid", tempo=tempo, time_signature=time_signature)
-        create_midi_file(melody_tracks, output_dir=output_dir, filename="melody.mid", tempo=tempo, time_signature=time_signature)
-        if bass_tracks:
-            create_midi_file(bass_tracks, output_dir=output_dir, filename="bass.mid", tempo=tempo, time_signature=time_signature)
+        create_midi_file([{
+            'name': 'Chords',
+            'channel': 0,
+            'events': combined_chord_events,
+            'instrument': instruments['Acoustic Grand Piano']
+        }], output_dir=output_dir, filename="chords.mid", tempo=tempo, time_signature=time_signature)
+
+        create_midi_file([{
+            'name': 'Melody',
+            'channel': 1,
+            'events': combined_melody_events,
+            'instrument': instruments['Acoustic Grand Piano']
+        }], output_dir=output_dir, filename="melody.mid", tempo=tempo, time_signature=time_signature)
+
+        if bass_tracks_combined:
+            create_midi_file(bass_tracks_combined, output_dir=output_dir, filename="bass.mid", tempo=tempo, time_signature=time_signature)
+
         create_drum_midi_file(drum_pattern, output_dir=output_dir, filename="drums.mid", tempo=tempo)
 
         # Create combined MIDI file
-        create_combined_midi_file(chord_tracks, melody_tracks, drum_pattern, bass_tracks, output_dir=output_dir, filename="song.mid", tempo=tempo, time_signature=time_signature)
+        all_tracks = [
+            {
+                'name': 'Chords',
+                'channel': 0,
+                'events': combined_chord_events,
+                'instrument': instruments['Acoustic Grand Piano']
+            },
+            {
+                'name': 'Melody',
+                'channel': 1,
+                'events': combined_melody_events,
+                'instrument': instruments['Acoustic Grand Piano']
+            }
+        ]
+        if bass_tracks_combined:
+            all_tracks.append(bass_tracks_combined[0])
+
+        create_combined_midi_file(all_tracks, drum_pattern, output_dir=output_dir, filename="song.mid", tempo=tempo, time_signature=time_signature)
 
         print(f"Generated song files in: {output_dir}")
         print("Files created:")
         print(f"- chords.mid")
         print(f"- melody.mid")
-        if bass_tracks:
+        if bass_tracks_combined:
             print(f"- bass.mid")
         print(f"- drums.mid")
         print(f"- song.mid (combined MIDI file)")
@@ -464,7 +533,7 @@ def main():
                 include_bass = input("Include bass line? (yes/no, default 'no'): ").strip().lower() or 'no'
                 bass_tracks = []
                 if include_bass == 'yes':
-                    bass_events = generate_bass_line(chords)
+                    bass_events = generate_bass_line(chords, time_signature, rhythm_length)
                     bass_tracks = [{
                         'name': 'Bass',
                         'channel': 1,
