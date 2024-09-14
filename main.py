@@ -67,22 +67,15 @@ def get_scale(root_note_name, scale_type, octaves):
                 scale_notes.append(note_number)
     return scale_notes
 
-def generate_variable_rhythm(length, time_signature):
+def generate_steady_rhythm(length, time_signature):
     """
-    Generates a rhythm pattern with variable note durations based on the time signature.
+    Generates a rhythm pattern where notes are played on every beat.
     """
     beats_per_measure, beat_unit = map(int, time_signature.split('/'))
     total_beats = length * beats_per_measure
-    durations = [1, 0.5, 0.25]  # Whole, half, quarter notes
-    rhythm_pattern = []
+    beat_duration = 1  # Duration of one beat in MIDI time units
 
-    current_beat = 0
-    while current_beat < total_beats:
-        duration = random.choice(durations)
-        if current_beat + duration > total_beats:
-            duration = total_beats - current_beat
-        rhythm_pattern.append(duration)
-        current_beat += duration
+    rhythm_pattern = [beat_duration for _ in range(int(total_beats))]
     return rhythm_pattern
 
 def generate_melody(scale_notes, rhythm_pattern):
@@ -314,10 +307,11 @@ def main():
             print(e)
             return
 
-        rhythm_pattern = generate_variable_rhythm(length, time_signature)
+        # Generate rhythm pattern with notes on every beat
+        rhythm_pattern = generate_steady_rhythm(length, time_signature)
 
         # Generate chords
-        progression_pattern = [random.randint(1, 7) for _ in range(4)]
+        progression_pattern = [random.randint(1, 7) for _ in range(length * 1)]  # One chord per measure
         chord_size = 3  # Triads
         chords = generate_chord_progression(scale_notes, progression_pattern, rhythm_pattern, chord_size=chord_size)
         chord_tracks = [{
@@ -328,8 +322,7 @@ def main():
         }]
 
         # Generate melody
-        melody_pattern = generate_variable_rhythm(length, time_signature)
-        melody_events = generate_melody(scale_notes, melody_pattern)
+        melody_events = generate_melody(scale_notes, rhythm_pattern)
         melody_tracks = [{
             'name': 'Melody',
             'channel': 1,
@@ -382,7 +375,8 @@ def main():
                 return
 
             rhythm_length = int(input("Enter the number of measures (default 4): ") or "4")
-            rhythm_pattern = generate_variable_rhythm(rhythm_length, time_signature)
+            # Generate rhythm pattern with notes on every beat
+            rhythm_pattern = generate_steady_rhythm(rhythm_length, time_signature)
 
             # Use 'Acoustic Grand Piano' as default instrument
             instrument_name = 'Acoustic Grand Piano'
