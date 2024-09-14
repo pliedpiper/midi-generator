@@ -43,6 +43,7 @@ scale_intervals = {
 # General MIDI instrument numbers
 instruments = {
     'Acoustic Grand Piano': 0,
+    'Electric Bass (finger)': 33,
     # Other instruments can be added if needed
 }
 
@@ -115,6 +116,18 @@ def generate_chord_progression(scale_notes, progression_pattern, rhythm_pattern,
 
         chords.append({'notes': chord, 'duration': duration, 'velocity': default_velocity})
     return chords
+
+def generate_bass_line(chord_progression, bass_octave=2):
+    """
+    Generates a bass line based on the root notes of the chord progression.
+    """
+    bass_line = []
+    default_velocity = 100  # Default velocity
+
+    for chord in chord_progression:
+        root_note = chord['notes'][0] - 12 * (4 - bass_octave)  # Adjust to bass octave
+        bass_line.append({'note': root_note, 'duration': chord['duration'], 'velocity': default_velocity})
+    return bass_line
 
 def generate_drum_pattern(length, complexity='simple'):
     """
@@ -203,11 +216,11 @@ def create_drum_midi_file(drum_pattern, output_dir, filename="drum_pattern.mid",
     with open(output_path, "wb") as output_file:
         midi.writeFile(output_file)
 
-def create_combined_midi_file(chord_tracks, melody_tracks, drum_pattern, output_dir, filename="song.mid", tempo=120, time_signature="4/4"):
+def create_combined_midi_file(chord_tracks, melody_tracks, drum_pattern, bass_tracks, output_dir, filename="song.mid", tempo=120, time_signature="4/4"):
     """
-    Creates a combined MIDI file with chords, melody, and drums.
+    Creates a combined MIDI file with chords, melody, bass, and drums.
     """
-    midi = MIDIFile(3)  # Three tracks: Chords, Melody, Drums
+    midi = MIDIFile(4)  # Four tracks: Chords, Melody, Bass, Drums
 
     # Chords Track
     chord_track_num = 0
@@ -237,8 +250,21 @@ def create_combined_midi_file(chord_tracks, melody_tracks, drum_pattern, output_
         midi.addNote(melody_track_num, melody_track['channel'], event['note'], time, event['duration'], event['velocity'])
         time += event['duration']
 
+    # Bass Track
+    bass_track_num = 2
+    bass_track = bass_tracks[0]
+    midi.addTrackName(bass_track_num, 0, bass_track['name'])
+    midi.addTempo(bass_track_num, 0, tempo)
+    midi.addTimeSignature(bass_track_num, 0, beats_per_measure, int(beat_unit ** 0.5), 24)
+    midi.addProgramChange(bass_track_num, bass_track['channel'], 0, bass_track['instrument'])
+
+    time = 0
+    for event in bass_track['events']:
+        midi.addNote(bass_track_num, bass_track['channel'], event['note'], time, event['duration'], event['velocity'])
+        time += event['duration']
+
     # Drums Track
-    drum_track_num = 2
+    drum_track_num = 3
     midi.addTrackName(drum_track_num, 0, 'Drums')
     midi.addTempo(drum_track_num, 0, tempo)
     midi.addTimeSignature(drum_track_num, 0, beats_per_measure, int(beat_unit ** 0.5), 24)
@@ -291,7 +317,7 @@ def main():
         return
 
     elif generation_type == 'song':
-        # Generate a song with drums, chords, and melody
+        # Generate a song with drums, chords, melody, and optional bass
         root_note = random.choice(list(note_name_to_number.keys()))
         scale_type = random.choice(list(scale_intervals.keys()))
         octaves = 1
@@ -330,6 +356,18 @@ def main():
             'instrument': instruments['Acoustic Grand Piano']
         }]
 
+        # Generate bass line
+        include_bass = input("Include bass line? (yes/no, default 'yes'): ").strip().lower() or 'yes'
+        bass_tracks = []
+        if include_bass == 'yes':
+            bass_events = generate_bass_line(chords)
+            bass_tracks = [{
+                'name': 'Bass',
+                'channel': 2,
+                'events': bass_events,
+                'instrument': instruments['Electric Bass (finger)']
+            }]
+
         # Generate drums
         complexity = 'simple'  # Could randomize this if desired
         drum_pattern = generate_drum_pattern(length, complexity=complexity)
@@ -342,15 +380,19 @@ def main():
         # Create individual MIDI files
         create_midi_file(chord_tracks, output_dir=output_dir, filename="chords.mid", tempo=tempo, time_signature=time_signature)
         create_midi_file(melody_tracks, output_dir=output_dir, filename="melody.mid", tempo=tempo, time_signature=time_signature)
+        if bass_tracks:
+            create_midi_file(bass_tracks, output_dir=output_dir, filename="bass.mid", tempo=tempo, time_signature=time_signature)
         create_drum_midi_file(drum_pattern, output_dir=output_dir, filename="drums.mid", tempo=tempo)
 
         # Create combined MIDI file
-        create_combined_midi_file(chord_tracks, melody_tracks, drum_pattern, output_dir=output_dir, filename="song.mid", tempo=tempo, time_signature=time_signature)
+        create_combined_midi_file(chord_tracks, melody_tracks, drum_pattern, bass_tracks, output_dir=output_dir, filename="song.mid", tempo=tempo, time_signature=time_signature)
 
         print(f"Generated song files in: {output_dir}")
         print("Files created:")
         print(f"- chords.mid")
         print(f"- melody.mid")
+        if bass_tracks:
+            print(f"- bass.mid")
         print(f"- drums.mid")
         print(f"- song.mid (combined MIDI file)")
 
@@ -417,13 +459,27 @@ def main():
                     'events': chords,
                     'instrument': instrument_number
                 }]
+
+                # Option to generate bass line
+                include_bass = input("Include bass line? (yes/no, default 'no'): ").strip().lower() or 'no'
+                bass_tracks = []
+                if include_bass == 'yes':
+                    bass_events = generate_bass_line(chords)
+                    bass_tracks = [{
+                        'name': 'Bass',
+                        'channel': 1,
+                        'events': bass_events,
+                        'instrument': instruments['Electric Bass (finger)']
+                    }]
+
                 # Directory structure: Generated Midi/<Key>/chords/
                 key_folder = f"{root_note_formatted}_{scale_type_formatted}"
                 output_dir = os.path.join("Generated Midi", key_folder, "chords")
                 filename = f"chords_{key_folder}_{tempo}bpm.mid"
 
                 # Create MIDI file
-                create_midi_file(tracks, output_dir=output_dir, filename=filename, tempo=tempo, time_signature=time_signature)
+                all_tracks = tracks + bass_tracks
+                create_midi_file(all_tracks, output_dir=output_dir, filename=filename, tempo=tempo, time_signature=time_signature)
                 print(f"Generated MIDI file: {os.path.join(output_dir, filename)}")
 
         elif generation_type == 'drums':
