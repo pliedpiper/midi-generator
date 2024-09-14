@@ -210,6 +210,56 @@ def create_drum_midi_file(drum_pattern, output_dir, filename="drum_pattern.mid",
     with open(output_path, "wb") as output_file:
         midi.writeFile(output_file)
 
+def create_combined_midi_file(chord_tracks, melody_tracks, drum_pattern, output_dir, filename="song.mid", tempo=120, time_signature="4/4"):
+    """
+    Creates a combined MIDI file with chords, melody, and drums.
+    """
+    midi = MIDIFile(3)  # Three tracks: Chords, Melody, Drums
+
+    # Chords Track
+    chord_track_num = 0
+    chord_track = chord_tracks[0]
+    midi.addTrackName(chord_track_num, 0, chord_track['name'])
+    midi.addTempo(chord_track_num, 0, tempo)
+    beats_per_measure, beat_unit = map(int, time_signature.split('/'))
+    midi.addTimeSignature(chord_track_num, 0, beats_per_measure, int(beat_unit ** 0.5), 24)
+    midi.addProgramChange(chord_track_num, chord_track['channel'], 0, chord_track['instrument'])
+
+    time = 0
+    for event in chord_track['events']:
+        for note in event['notes']:
+            midi.addNote(chord_track_num, chord_track['channel'], note, time, event['duration'], event['velocity'])
+        time += event['duration']
+
+    # Melody Track
+    melody_track_num = 1
+    melody_track = melody_tracks[0]
+    midi.addTrackName(melody_track_num, 0, melody_track['name'])
+    midi.addTempo(melody_track_num, 0, tempo)
+    midi.addTimeSignature(melody_track_num, 0, beats_per_measure, int(beat_unit ** 0.5), 24)
+    midi.addProgramChange(melody_track_num, melody_track['channel'], 0, melody_track['instrument'])
+
+    time = 0
+    for event in melody_track['events']:
+        midi.addNote(melody_track_num, melody_track['channel'], event['note'], time, event['duration'], event['velocity'])
+        time += event['duration']
+
+    # Drums Track
+    drum_track_num = 2
+    midi.addTrackName(drum_track_num, 0, 'Drums')
+    midi.addTempo(drum_track_num, 0, tempo)
+    midi.addTimeSignature(drum_track_num, 0, beats_per_measure, int(beat_unit ** 0.5), 24)
+
+    for event in drum_pattern:
+        midi.addNote(drum_track_num, 9, event['note'], event['time'], event['duration'], 100)
+
+    # Ensure the output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+
+    output_path = os.path.join(output_dir, filename)
+    with open(output_path, "wb") as output_file:
+        midi.writeFile(output_file)
+
 def create_midi_file(tracks, output_dir, filename="composition.mid", tempo=120, time_signature="4/4"):
     """
     Creates a MIDI file from the given tracks and saves it in the specified directory.
@@ -240,25 +290,23 @@ def create_midi_file(tracks, output_dir, filename="composition.mid", tempo=120, 
 
 def main():
     print("Welcome to the Advanced MIDI Generator!")
-    generation_type = input("Choose generation type ('melody', 'chords', 'drums', 'import'): ").strip().lower()
+    generation_type = input("Choose generation type ('song', 'melody', 'chords', 'drums', 'import'): ").strip().lower()
 
     if generation_type == 'import':
         # Placeholder for MIDI import and modification feature
         print("MIDI import and modification feature is under development.")
         return
 
-    # Common settings for melody and chords
-    if generation_type in ['melody', 'chords']:
-        root_note = input("Enter the root note (e.g., C, D#, F): ").strip()
-        root_note_formatted = root_note.replace('#', 'sharp').replace('b', 'flat')
-        print("Available scales/modes:")
-        for scale in scale_intervals.keys():
-            print(f"- {scale}")
-        scale_type = input("Enter the scale/mode: ").strip().lower()
-        scale_type_formatted = scale_type.replace(' ', '_')
-        octaves = int(input("Enter the number of octaves (default 1): ") or "1")
-        tempo = int(input("Enter the tempo in BPM (default 120): ") or "120")
-        time_signature = input("Enter the time signature (e.g., '4/4', '3/4', default '4/4'): ") or "4/4"
+    elif generation_type == 'song':
+        # Generate a song with drums, chords, and melody
+        root_note = random.choice(list(note_name_to_number.keys()))
+        scale_type = random.choice(list(scale_intervals.keys()))
+        octaves = 1
+        tempo = random.randint(60, 140)
+        time_signature = '4/4'
+        length = 4  # Number of measures
+
+        print(f"Generating song in key: {root_note} {scale_type}, Tempo: {tempo} BPM")
 
         try:
             scale_notes = get_scale(root_note, scale_type, octaves)
@@ -266,78 +314,145 @@ def main():
             print(e)
             return
 
-        rhythm_length = int(input("Enter the number of measures (default 4): ") or "4")
-        rhythm_pattern = generate_variable_rhythm(rhythm_length, time_signature)
+        rhythm_pattern = generate_variable_rhythm(length, time_signature)
 
-        # Use 'Acoustic Grand Piano' as default instrument
-        instrument_name = 'Acoustic Grand Piano'
-        instrument_number = instruments[instrument_name]
+        # Generate chords
+        progression_pattern = [random.randint(1, 7) for _ in range(4)]
+        chord_size = 3  # Triads
+        chords = generate_chord_progression(scale_notes, progression_pattern, rhythm_pattern, chord_size=chord_size)
+        chord_tracks = [{
+            'name': 'Chords',
+            'channel': 0,
+            'events': chords,
+            'instrument': instruments['Acoustic Grand Piano']
+        }]
 
-        if generation_type == 'melody':
-            melody = generate_melody(scale_notes, rhythm_pattern)
-            tracks = [{
-                'name': 'Melody',
-                'channel': 0,
-                'events': melody,
-                'instrument': instrument_number
-            }]
-            # Directory structure: Generated Midi/<Key>/melody/
-            key_folder = f"{root_note_formatted}_{scale_type_formatted}"
-            output_dir = os.path.join("Generated Midi", key_folder, "melody")
-            filename = f"melody_{key_folder}_{tempo}bpm.mid"
+        # Generate melody
+        melody_pattern = generate_variable_rhythm(length, time_signature)
+        melody_events = generate_melody(scale_notes, melody_pattern)
+        melody_tracks = [{
+            'name': 'Melody',
+            'channel': 1,
+            'events': melody_events,
+            'instrument': instruments['Acoustic Grand Piano']
+        }]
 
-            # Create MIDI file
-            create_midi_file(tracks, output_dir=output_dir, filename=filename, tempo=tempo, time_signature=time_signature)
-            print(f"Generated MIDI file: {os.path.join(output_dir, filename)}")
+        # Generate drums
+        complexity = 'simple'  # Could randomize this if desired
+        drum_pattern = generate_drum_pattern(length, complexity=complexity)
 
-        elif generation_type == 'chords':
-            # Chord progression
-            progression_input = input("Enter chord progression degrees separated by spaces (e.g., '1 4 5 1', default '1 5 6 4', or 'random' to randomize): ") or "1 5 6 4"
-            if progression_input.strip().lower() == 'random':
-                progression_length = int(input("Enter the number of chords in the progression (default 4): ") or "4")
-                progression_pattern = [random.randint(1, 7) for _ in range(progression_length)]
-                print(f"Randomly generated chord progression: {' '.join(map(str, progression_pattern))}")
-            else:
-                progression_pattern = list(map(int, progression_input.strip().split()))
-            # Ask for chord size
-            chord_size = int(input("Enter the number of notes in each chord (e.g., 3 for triads, 4 for seventh chords, default 3): ") or "3")
-            chords = generate_chord_progression(scale_notes, progression_pattern, rhythm_pattern, chord_size=chord_size)
-            tracks = [{
-                'name': 'Chords',
-                'channel': 0,
-                'events': chords,
-                'instrument': instrument_number
-            }]
-            # Directory structure: Generated Midi/<Key>/chords/
-            key_folder = f"{root_note_formatted}_{scale_type_formatted}"
-            output_dir = os.path.join("Generated Midi", key_folder, "chords")
-            filename = f"chords_{key_folder}_{tempo}bpm.mid"
+        # Create song directory
+        song_folder_name = f"{root_note}_{scale_type}_{tempo}bpm_song"
+        output_dir = os.path.join("songs", song_folder_name)
+        os.makedirs(output_dir, exist_ok=True)
 
-            # Create MIDI file
-            create_midi_file(tracks, output_dir=output_dir, filename=filename, tempo=tempo, time_signature=time_signature)
-            print(f"Generated MIDI file: {os.path.join(output_dir, filename)}")
+        # Create individual MIDI files
+        create_midi_file(chord_tracks, output_dir=output_dir, filename="chords.mid", tempo=tempo, time_signature=time_signature)
+        create_midi_file(melody_tracks, output_dir=output_dir, filename="melody.mid", tempo=tempo, time_signature=time_signature)
+        create_drum_midi_file(drum_pattern, output_dir=output_dir, filename="drums.mid", tempo=tempo)
 
-    elif generation_type == 'drums':
-        # Drum pattern generation
-        length = int(input("Enter the number of measures for the drum pattern (default 4): ") or "4")
-        tempo = int(input("Enter the tempo in BPM (default 120): ") or "120")
-        complexity = input("Enter 'simple' for a simple pattern or 'complex' for a complex pattern (default 'simple'): ").strip().lower() or 'simple'
-        if complexity not in ['simple', 'complex']:
-            print("Invalid complexity level. Choose 'simple' or 'complex'.")
-            return
+        # Create combined MIDI file
+        create_combined_midi_file(chord_tracks, melody_tracks, drum_pattern, output_dir=output_dir, filename="song.mid", tempo=tempo, time_signature=time_signature)
 
-        drum_pattern = generate_drum_pattern(length, complexity)
-        # Directory structure: Generated Midi/drums/<complexity>/
-        output_dir = os.path.join("Generated Midi", "drums", complexity)
-        filename = f"drum_pattern_{complexity}_{tempo}bpm_{length}measures.mid"
-
-        # Create MIDI file
-        create_drum_midi_file(drum_pattern, output_dir=output_dir, filename=filename, tempo=tempo)
-        print(f"Generated MIDI file: {os.path.join(output_dir, filename)}")
+        print(f"Generated song files in: {output_dir}")
+        print("Files created:")
+        print(f"- chords.mid")
+        print(f"- melody.mid")
+        print(f"- drums.mid")
+        print(f"- song.mid (combined MIDI file)")
 
     else:
-        print("Invalid generation type.")
-        return
+        # Common settings for melody and chords
+        if generation_type in ['melody', 'chords']:
+            root_note = input("Enter the root note (e.g., C, D#, F): ").strip()
+            root_note_formatted = root_note.replace('#', 'sharp').replace('b', 'flat')
+            print("Available scales/modes:")
+            for scale in scale_intervals.keys():
+                print(f"- {scale}")
+            scale_type = input("Enter the scale/mode: ").strip().lower()
+            scale_type_formatted = scale_type.replace(' ', '_')
+            octaves = int(input("Enter the number of octaves (default 1): ") or "1")
+            tempo = int(input("Enter the tempo in BPM (default 120): ") or "120")
+            time_signature = input("Enter the time signature (e.g., '4/4', '3/4', default '4/4'): ") or "4/4"
+
+            try:
+                scale_notes = get_scale(root_note, scale_type, octaves)
+            except ValueError as e:
+                print(e)
+                return
+
+            rhythm_length = int(input("Enter the number of measures (default 4): ") or "4")
+            rhythm_pattern = generate_variable_rhythm(rhythm_length, time_signature)
+
+            # Use 'Acoustic Grand Piano' as default instrument
+            instrument_name = 'Acoustic Grand Piano'
+            instrument_number = instruments[instrument_name]
+
+            if generation_type == 'melody':
+                melody = generate_melody(scale_notes, rhythm_pattern)
+                tracks = [{
+                    'name': 'Melody',
+                    'channel': 0,
+                    'events': melody,
+                    'instrument': instrument_number
+                }]
+                # Directory structure: Generated Midi/<Key>/melody/
+                key_folder = f"{root_note_formatted}_{scale_type_formatted}"
+                output_dir = os.path.join("Generated Midi", key_folder, "melody")
+                filename = f"melody_{key_folder}_{tempo}bpm.mid"
+
+                # Create MIDI file
+                create_midi_file(tracks, output_dir=output_dir, filename=filename, tempo=tempo, time_signature=time_signature)
+                print(f"Generated MIDI file: {os.path.join(output_dir, filename)}")
+
+            elif generation_type == 'chords':
+                # Chord progression
+                progression_input = input("Enter chord progression degrees separated by spaces (e.g., '1 4 5 1', default '1 5 6 4', or 'random' to randomize): ") or "1 5 6 4"
+                if progression_input.strip().lower() == 'random':
+                    progression_length = int(input("Enter the number of chords in the progression (default 4): ") or "4")
+                    progression_pattern = [random.randint(1, 7) for _ in range(progression_length)]
+                    print(f"Randomly generated chord progression: {' '.join(map(str, progression_pattern))}")
+                else:
+                    progression_pattern = list(map(int, progression_input.strip().split()))
+                # Ask for chord size
+                chord_size = int(input("Enter the number of notes in each chord (e.g., 3 for triads, 4 for seventh chords, default 3): ") or "3")
+                chords = generate_chord_progression(scale_notes, progression_pattern, rhythm_pattern, chord_size=chord_size)
+                tracks = [{
+                    'name': 'Chords',
+                    'channel': 0,
+                    'events': chords,
+                    'instrument': instrument_number
+                }]
+                # Directory structure: Generated Midi/<Key>/chords/
+                key_folder = f"{root_note_formatted}_{scale_type_formatted}"
+                output_dir = os.path.join("Generated Midi", key_folder, "chords")
+                filename = f"chords_{key_folder}_{tempo}bpm.mid"
+
+                # Create MIDI file
+                create_midi_file(tracks, output_dir=output_dir, filename=filename, tempo=tempo, time_signature=time_signature)
+                print(f"Generated MIDI file: {os.path.join(output_dir, filename)}")
+
+        elif generation_type == 'drums':
+            # Drum pattern generation
+            length = int(input("Enter the number of measures for the drum pattern (default 4): ") or "4")
+            tempo = int(input("Enter the tempo in BPM (default 120): ") or "120")
+            complexity = input("Enter 'simple' for a simple pattern or 'complex' for a complex pattern (default 'simple'): ").strip().lower() or 'simple'
+            if complexity not in ['simple', 'complex']:
+                print("Invalid complexity level. Choose 'simple' or 'complex'.")
+                return
+
+            drum_pattern = generate_drum_pattern(length, complexity)
+            # Directory structure: Generated Midi/drums/<complexity>/
+            output_dir = os.path.join("Generated Midi", "drums", complexity)
+            filename = f"drum_pattern_{complexity}_{tempo}bpm_{length}measures.mid"
+
+            # Create MIDI file
+            create_drum_midi_file(drum_pattern, output_dir=output_dir, filename=filename, tempo=tempo)
+            print(f"Generated MIDI file: {os.path.join(output_dir, filename)}")
+
+        else:
+            print("Invalid generation type.")
+            return
 
 if __name__ == "__main__":
     main()
