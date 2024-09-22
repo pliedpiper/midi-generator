@@ -1,6 +1,8 @@
 import random
 import os
 from midiutil import MIDIFile
+import tkinter as tk
+from tkinter import messagebox
 
 # Mapping of note names to MIDI note numbers (C4 = MIDI note 60)
 note_name_to_number = {
@@ -44,6 +46,9 @@ scale_intervals = {
 instruments = {
     'Acoustic Grand Piano': 0,
     'Electric Bass (finger)': 33,
+    'Electric Guitar (clean)': 27,
+    'Violin': 40,
+    'Trumpet': 56,
     # Other instruments can be added if needed
 }
 
@@ -85,16 +90,9 @@ def generate_melody(scale_notes, rhythm_pattern):
     """
     melody = []
     default_velocity = 100  # Default velocity
-    previous_note_index = random.randint(0, len(scale_notes) - 1)
     for duration in rhythm_pattern:
-        # Decide the next note based on previous note
-        move = random.choice([-2, -1, 0, 1, 2])  # Stepwise movement
-        next_note_index = previous_note_index + move
-        # Ensure index is within bounds
-        next_note_index = max(0, min(next_note_index, len(scale_notes) - 1))
-        note = scale_notes[next_note_index]
+        note = random.choice(scale_notes)
         melody.append({'note': note, 'duration': duration, 'velocity': default_velocity})
-        previous_note_index = next_note_index
     return melody
 
 def generate_chord_progression(scale_notes, progression_pattern, rhythm_pattern, chord_size=3):
@@ -102,7 +100,7 @@ def generate_chord_progression(scale_notes, progression_pattern, rhythm_pattern,
     Generates chords based on a chord progression pattern.
     """
     chords = []
-    default_velocity = 100  # Default velocity
+    default_velocity = 80  # Default velocity
     scale_length = len(scale_notes)
     progression_length = len(progression_pattern)
     rhythm_length = len(rhythm_pattern)
@@ -124,61 +122,57 @@ def generate_chord_progression(scale_notes, progression_pattern, rhythm_pattern,
         chords.append({'notes': chord, 'duration': duration, 'velocity': default_velocity})
     return chords
 
-def generate_bass_line(chord_progression, bass_octave=2):
+def generate_bass_line(chord_progression, time_signature, bass_octave=3):
     """
-    Generates a bass line with more interesting patterns.
+    Generates an improved bass line that arpeggiates the chords and adds rhythmic variation.
     """
     bass_line = []
     default_velocity = 100  # Default velocity
+    beats_per_measure, _ = map(int, time_signature.split('/'))
+    measure_duration = beats_per_measure * 1  # Each beat is duration 1
 
-    for chord in chord_progression:
-        root_note = chord['notes'][0] - 12 * (4 - bass_octave)  # Adjust to bass octave
-        duration = chord['duration']
-        start_time = chord.get('start_time', 0)
+    total_measures = int(len(chord_progression) / beats_per_measure)
+    for measure in range(total_measures):
+        index = measure * beats_per_measure
+        if index < len(chord_progression):
+            chord = chord_progression[index]
+            duration = chord['duration']
+            start_time = chord.get('start_time', measure * measure_duration)
 
-        # Decide on a pattern for the bass line
-        # For example, play on each beat within the chord's duration
-        beats = int(duration)
-        if beats == 0:
-            beats = 1  # Ensure at least one beat
-        sub_duration = duration / beats
+            # Create an arpeggiated bass pattern
+            chord_notes = chord['notes']
+            bass_notes = [(note - 12 * (4 - bass_octave)) for note in chord_notes]
+            pattern = bass_notes * int(duration)
+            sub_duration = duration / len(pattern) if len(pattern) > 0 else duration
 
-        current_time = start_time
-        for i in range(beats):
-            if i % 2 == 0:
-                note = root_note
-            else:
-                # Play a note from the chord or a fifth
-                if len(chord['notes']) > 1:
-                    note = chord['notes'][1] - 12 * (4 - bass_octave)
-                else:
-                    note = root_note + 7  # Perfect fifth
-            bass_line.append({
-                'note': note,
-                'duration': sub_duration,
-                'velocity': default_velocity,
-                'start_time': current_time
-            })
-            current_time += sub_duration
+            current_time = start_time
+            for note in pattern:
+                bass_line.append({
+                    'note': note,
+                    'duration': sub_duration,
+                    'velocity': default_velocity,
+                    'start_time': current_time
+                })
+                current_time += sub_duration
 
     return bass_line
 
 def generate_drum_pattern(length, complexity='simple'):
     """
-    Generates a drum pattern compatible with Addictive Drums 2.
+    Generates a drum pattern compatible with General MIDI mapping.
     """
     drum_pattern = []
-    # MIDI note numbers for Addictive Drums 2 mapping
+    # MIDI note numbers for General MIDI standard
     drums = {
-        'kick': 36,          # C1
-        'snare': 38,         # D1
-        'closed_hat': 42,    # F#1
-        'open_hat': 46,      # A#1
-        'low_tom': 45,       # A1
-        'mid_tom': 48,       # C2
-        'high_tom': 50,      # D2
-        'crash_cymbal': 49,  # C#2
-        'ride_cymbal': 51    # D#2
+        'kick': 36,          # Bass Drum 1
+        'snare': 38,         # Acoustic Snare
+        'closed_hat': 42,    # Closed Hi-hat
+        'open_hat': 46,      # Open Hi-hat
+        'low_tom': 45,       # Low Tom
+        'mid_tom': 48,       # High Tom
+        'high_tom': 50,      # High Tom 2
+        'crash_cymbal': 49,  # Crash Cymbal 1
+        'ride_cymbal': 51    # Ride Cymbal 1
     }
 
     beats_per_measure = 4
@@ -193,10 +187,10 @@ def generate_drum_pattern(length, complexity='simple'):
         # Simple Pattern
         if complexity == 'simple':
             # Kick on beats 1 and 3
-            if step % (subdivision * beats_per_measure) == 0 or step % (subdivision * beats_per_measure) == subdivision * 2:
+            if step % subdivision == 0 and (step // subdivision) % beats_per_measure in [0, 2]:
                 events.append({'note': drums['kick'], 'time': time, 'duration': step_duration})
             # Snare on beats 2 and 4
-            if step % (subdivision * beats_per_measure) == subdivision * 1 or step % (subdivision * beats_per_measure) == subdivision * 3:
+            if step % subdivision == 0 and (step // subdivision) % beats_per_measure in [1, 3]:
                 events.append({'note': drums['snare'], 'time': time, 'duration': step_duration})
             # Hi-hat on every 8th note
             if step % (subdivision // 2) == 0:
@@ -207,7 +201,7 @@ def generate_drum_pattern(length, complexity='simple'):
             if random.random() < 0.5:
                 events.append({'note': drums['kick'], 'time': time, 'duration': step_duration})
             # Snare with ghost notes
-            if step % (subdivision * beats_per_measure) == subdivision * 1 or step % (subdivision * beats_per_measure) == subdivision * 3:
+            if step % subdivision == 0 and (step // subdivision) % beats_per_measure in [1, 3]:
                 events.append({'note': drums['snare'], 'time': time, 'duration': step_duration})
             elif random.random() < 0.1:
                 events.append({'note': drums['snare'], 'time': time, 'duration': step_duration * 0.5})
@@ -261,7 +255,7 @@ def create_combined_midi_file(tracks, drum_pattern, output_dir, filename="song.m
     for track_num, track in enumerate(tracks):
         midi.addTrackName(track_num, 0, track['name'])
         midi.addTempo(track_num, 0, tempo)
-        midi.addTimeSignature(track_num, 0, beats_per_measure, int(beat_unit ** 0.5), 24)
+        midi.addTimeSignature(track_num, 0, beats_per_measure, beat_unit, 24)
         midi.addProgramChange(track_num, track['channel'], 0, track['instrument'])
 
         for event in track['events']:
@@ -276,7 +270,7 @@ def create_combined_midi_file(tracks, drum_pattern, output_dir, filename="song.m
     drum_track_num = len(tracks)
     midi.addTrackName(drum_track_num, 0, 'Drums')
     midi.addTempo(drum_track_num, 0, tempo)
-    midi.addTimeSignature(drum_track_num, 0, beats_per_measure, int(beat_unit ** 0.5), 24)
+    midi.addTimeSignature(drum_track_num, 0, beats_per_measure, beat_unit, 24)
 
     for event in drum_pattern:
         midi.addNote(drum_track_num, 9, event['note'], event['time'], event['duration'], 100)
@@ -298,7 +292,7 @@ def create_midi_file(tracks, output_dir, filename="composition.mid", tempo=120, 
     for track_num, track in enumerate(tracks):
         midi.addTrackName(track_num, 0, track['name'])
         midi.addTempo(track_num, 0, tempo)
-        midi.addTimeSignature(track_num, 0, beats_per_measure, int(beat_unit ** 0.5), 24)
+        midi.addTimeSignature(track_num, 0, beats_per_measure, beat_unit, 24)
         midi.addProgramChange(track_num, track['channel'], 0, track['instrument'])
 
         for event in track['events']:
@@ -316,63 +310,78 @@ def create_midi_file(tracks, output_dir, filename="composition.mid", tempo=120, 
     with open(output_path, "wb") as output_file:
         midi.writeFile(output_file)
 
-def main():
-    print("Welcome to the Advanced MIDI Generator!")
-    generation_type = input("Choose generation type ('song', 'melody', 'chords', 'drums', 'import'): ").strip().lower()
+# GUI Implementation using Tkinter
 
-    if generation_type == 'import':
-        # Placeholder for MIDI import and modification feature
-        print("MIDI import and modification feature is under development.")
-        return
+def run_gui():
+    root = tk.Tk()
+    root.title("Advanced MIDI Generator")
 
-    elif generation_type == 'song':
-        # Generate a song with drums, chords, melody, and optional bass
-        root_note = input("Enter the root note for the song (e.g., C, D#, F): ").strip()
-        print("Available scales/modes:")
-        for scale in scale_intervals.keys():
-            print(f"- {scale}")
-        scale_type = input("Enter the scale/mode for the song: ").strip().lower()
+    def show_options():
+        generation_type = gen_type_var.get()
+        if generation_type == 'import':
+            messagebox.showinfo("Info", "MIDI import and modification feature is under development.")
+            return
+
+        elif generation_type == 'song':
+            generate_song()
+        else:
+            generate_individual()
+
+    def generate_song():
+        song_window = tk.Toplevel(root)
+        song_window.title("Generate Song")
+
+        # Collect inputs
+        tk.Label(song_window, text="Root Note (e.g., C, D#, F):").grid(row=0, column=0)
+        root_note_entry = tk.Entry(song_window)
+        root_note_entry.grid(row=0, column=1)
+
+        tk.Label(song_window, text="Scale/Mode:").grid(row=1, column=0)
+        scale_var = tk.StringVar(song_window)
+        scale_var.set('major')
+        tk.OptionMenu(song_window, scale_var, *scale_intervals.keys()).grid(row=1, column=1)
+
+        tk.Label(song_window, text="Include Bass Line:").grid(row=2, column=0)
+        bass_var = tk.StringVar(song_window)
+        bass_var.set('yes')
+        tk.OptionMenu(song_window, bass_var, 'yes', 'no').grid(row=2, column=1)
+
+        tk.Button(song_window, text="Generate", command=lambda: generate_song_action(
+            root_note_entry.get(), scale_var.get(), bass_var.get())).grid(row=3, column=0, columnspan=2)
+
+    def generate_song_action(root_note, scale_type, include_bass):
         octaves = 1
         tempo = random.randint(60, 140)
         time_signature = '4/4'
         total_length = 32  # Total number of measures
         section_length = 8  # Measures per section (Verse/Chorus)
 
-        print(f"Generating song in key: {root_note} {scale_type}, Tempo: {tempo} BPM")
-
         try:
             scale_notes = get_scale(root_note, scale_type, octaves)
         except ValueError as e:
-            print(e)
+            messagebox.showerror("Error", str(e))
             return
 
         # Generate rhythm pattern with notes on every beat
         beats_per_measure, _ = map(int, time_signature.split('/'))
         rhythm_pattern = generate_steady_rhythm(total_length, time_signature)
 
-        # Decide on including bass line
-        include_bass = input("Include bass line? (yes/no, default 'yes'): ").strip().lower() or 'yes'
-
         # Initialize tracks
         chord_tracks = []
         melody_tracks = []
         bass_tracks = []
 
-        # Define song structure: Verse (8 measures) -> Chorus (8 measures) -> Verse (8 measures) -> Chorus (8 measures)
+        # Define song structure
         sections = ['Verse', 'Chorus', 'Verse', 'Chorus']
         current_time = 0
 
-        # Generate drum pattern for the entire song
-        drum_pattern = generate_drum_pattern(total_length, complexity='simple')
+        # Generate drum pattern
+        drum_pattern = generate_drum_pattern(total_length, complexity='complex')
 
         # Generate music for each section
         for section in sections:
             # Generate chords
-            if section == 'Verse':
-                progression_pattern = [random.randint(1, 7) for _ in range(section_length)]
-            elif section == 'Chorus':
-                progression_pattern = [random.randint(1, 7) for _ in range(section_length)]
-            # Adjust chord size if desired
+            progression_pattern = [random.randint(1, 7) for _ in range(section_length)]
             chord_size = 3  # Triads
             section_rhythm = generate_steady_rhythm(section_length, time_signature)
             chords = generate_chord_progression(scale_notes, progression_pattern, section_rhythm, chord_size=chord_size)
@@ -400,12 +409,12 @@ def main():
                 'name': f'Melody',
                 'channel': 1,
                 'events': melody_events,
-                'instrument': instruments['Acoustic Grand Piano']
+                'instrument': instruments['Violin']
             })
 
             # Generate bass line
             if include_bass == 'yes':
-                bass_events = generate_bass_line(chords)
+                bass_events = generate_bass_line(chords, time_signature, bass_octave=3)
                 bass_tracks.append({
                     'name': f'Bass',
                     'channel': 2,
@@ -454,7 +463,7 @@ def main():
             'name': 'Melody',
             'channel': 1,
             'events': combined_melody_events,
-            'instrument': instruments['Acoustic Grand Piano']
+            'instrument': instruments['Violin']
         }], output_dir=output_dir, filename="melody.mid", tempo=tempo, time_signature=time_signature)
 
         if bass_tracks_combined:
@@ -474,7 +483,7 @@ def main():
                 'name': 'Melody',
                 'channel': 1,
                 'events': combined_melody_events,
-                'instrument': instruments['Acoustic Grand Piano']
+                'instrument': instruments['Violin']
             }
         ]
         if bass_tracks_combined:
@@ -482,135 +491,145 @@ def main():
 
         create_combined_midi_file(all_tracks, drum_pattern, output_dir=output_dir, filename="song.mid", tempo=tempo, time_signature=time_signature)
 
-        print(f"Generated song files in: {output_dir}")
-        print("Files created:")
-        print(f"- chords.mid")
-        print(f"- melody.mid")
-        if bass_tracks_combined:
-            print(f"- bass.mid")
-        print(f"- drums.mid")
-        print(f"- song.mid (combined MIDI file)")
+        messagebox.showinfo("Success", f"Generated song files in: {output_dir}")
 
-    else:
-        # Common settings for melody and chords
-        if generation_type in ['melody', 'chords']:
-            root_note = input("Enter the root note (e.g., C, D#, F): ").strip()
+    def generate_individual():
+        individual_window = tk.Toplevel(root)
+        individual_window.title("Generate Individual Part")
+
+        # Collect inputs
+        tk.Label(individual_window, text="Part to Generate:").grid(row=0, column=0)
+        part_var = tk.StringVar(individual_window)
+        part_var.set('melody')
+        tk.OptionMenu(individual_window, part_var, 'melody', 'chords', 'drums').grid(row=0, column=1)
+
+        tk.Label(individual_window, text="Root Note (e.g., C, D#, F):").grid(row=1, column=0)
+        root_note_entry = tk.Entry(individual_window)
+        root_note_entry.grid(row=1, column=1)
+
+        tk.Label(individual_window, text="Scale/Mode:").grid(row=2, column=0)
+        scale_var = tk.StringVar(individual_window)
+        scale_var.set('major')
+        tk.OptionMenu(individual_window, scale_var, *scale_intervals.keys()).grid(row=2, column=1)
+
+        tk.Label(individual_window, text="Tempo (BPM):").grid(row=3, column=0)
+        tempo_entry = tk.Entry(individual_window)
+        tempo_entry.insert(0, "120")
+        tempo_entry.grid(row=3, column=1)
+
+        tk.Label(individual_window, text="Measures:").grid(row=4, column=0)
+        measures_entry = tk.Entry(individual_window)
+        measures_entry.insert(0, "4")
+        measures_entry.grid(row=4, column=1)
+
+        tk.Button(individual_window, text="Generate", command=lambda: generate_individual_action(
+            part_var.get(), root_note_entry.get(), scale_var.get(), tempo_entry.get(), measures_entry.get())).grid(row=5, column=0, columnspan=2)
+
+    def generate_individual_action(part, root_note, scale_type, tempo, measures):
+        try:
+            tempo = int(tempo)
+            measures = int(measures)
+            if part != 'drums':
+                scale_notes = get_scale(root_note, scale_type, 1)
+        except ValueError as e:
+            messagebox.showerror("Error", str(e))
+            return
+
+        time_signature = '4/4'
+
+        if part == 'melody':
+            rhythm_pattern = generate_steady_rhythm(measures, time_signature)
+            melody = generate_melody(scale_notes, rhythm_pattern)
+            # Calculate start_time for each note
+            current_time = 0
+            for note in melody:
+                note['start_time'] = current_time
+                current_time += note['duration']
+
+            tracks = [{
+                'name': 'Melody',
+                'channel': 0,
+                'events': melody,
+                'instrument': instruments['Electric Guitar (clean)']
+            }]
+
+            # Output directory
             root_note_formatted = root_note.replace('#', 'sharp').replace('b', 'flat')
-            print("Available scales/modes:")
-            for scale in scale_intervals.keys():
-                print(f"- {scale}")
-            scale_type = input("Enter the scale/mode: ").strip().lower()
             scale_type_formatted = scale_type.replace(' ', '_')
-            octaves = int(input("Enter the number of octaves (default 1): ") or "1")
-            tempo = int(input("Enter the tempo in BPM (default 120): ") or "120")
-            time_signature = input("Enter the time signature (e.g., '4/4', '3/4', default '4/4'): ") or "4/4"
+            key_folder = f"{root_note_formatted}_{scale_type_formatted}"
+            output_dir = os.path.join("Generated Midi", key_folder, "melody")
+            filename = f"melody_{key_folder}_{tempo}bpm.mid"
 
-            try:
-                scale_notes = get_scale(root_note, scale_type, octaves)
-            except ValueError as e:
-                print(e)
-                return
+            # Create MIDI file
+            create_midi_file(tracks, output_dir=output_dir, filename=filename, tempo=tempo, time_signature=time_signature)
+            messagebox.showinfo("Success", f"Generated MIDI file: {os.path.join(output_dir, filename)}")
 
-            rhythm_length = int(input("Enter the number of measures (default 4): ") or "4")
-            # Generate rhythm pattern with notes on every beat
-            rhythm_pattern = generate_steady_rhythm(rhythm_length, time_signature)
+        elif part == 'chords':
+            progression_pattern = [random.randint(1, 7) for _ in range(measures)]
+            chord_size = 3  # Triads
+            rhythm_pattern = generate_steady_rhythm(measures, time_signature)
+            chords = generate_chord_progression(scale_notes, progression_pattern, rhythm_pattern, chord_size=chord_size)
 
-            # Use 'Acoustic Grand Piano' as default instrument
-            instrument_name = 'Acoustic Grand Piano'
-            instrument_number = instruments[instrument_name]
+            # Assign start_time to chords
+            current_time = 0
+            for chord in chords:
+                chord['start_time'] = current_time
+                current_time += chord['duration']
 
-            if generation_type == 'melody':
-                melody = generate_melody(scale_notes, rhythm_pattern)
-                # Calculate start_time for each note
-                current_time = 0
-                for note in melody:
-                    note['start_time'] = current_time
-                    current_time += note['duration']
+            tracks = [{
+                'name': 'Chords',
+                'channel': 0,
+                'events': chords,
+                'instrument': instruments['Acoustic Grand Piano']
+            }]
 
-                tracks = [{
-                    'name': 'Melody',
-                    'channel': 0,
-                    'events': melody,
-                    'instrument': instrument_number
-                }]
-                # Directory structure: Generated Midi/<Key>/melody/
-                key_folder = f"{root_note_formatted}_{scale_type_formatted}"
-                output_dir = os.path.join("Generated Midi", key_folder, "melody")
-                filename = f"melody_{key_folder}_{tempo}bpm.mid"
-
-                # Create MIDI file
-                create_midi_file(tracks, output_dir=output_dir, filename=filename, tempo=tempo, time_signature=time_signature)
-                print(f"Generated MIDI file: {os.path.join(output_dir, filename)}")
-
-            elif generation_type == 'chords':
-                # Chord progression
-                progression_input = input("Enter chord progression degrees separated by spaces (e.g., '1 4 5 1', default '1 5 6 4', or 'random' to randomize): ") or "1 5 6 4"
-                if progression_input.strip().lower() == 'random':
-                    progression_length = int(input("Enter the number of chords in the progression (default 4): ") or "4")
-                    progression_pattern = [random.randint(1, 7) for _ in range(progression_length)]
-                    print(f"Randomly generated chord progression: {' '.join(map(str, progression_pattern))}")
-                else:
-                    progression_pattern = list(map(int, progression_input.strip().split()))
-                # Ask for chord size
-                chord_size = int(input("Enter the number of notes in each chord (e.g., 3 for triads, 4 for seventh chords, default 3): ") or "3")
-                chords = generate_chord_progression(scale_notes, progression_pattern, rhythm_pattern, chord_size=chord_size)
-
-                # Assign start_time to chords
-                current_time = 0
-                for chord in chords:
-                    chord['start_time'] = current_time
-                    current_time += chord['duration']
-
-                tracks = [{
-                    'name': 'Chords',
-                    'channel': 0,
-                    'events': chords,
-                    'instrument': instrument_number
+            # Option to generate bass line
+            include_bass = messagebox.askyesno("Bass Line", "Include bass line?")
+            bass_tracks = []
+            if include_bass:
+                bass_events = generate_bass_line(chords, time_signature, bass_octave=3)
+                bass_tracks = [{
+                    'name': 'Bass',
+                    'channel': 1,
+                    'events': bass_events,
+                    'instrument': instruments['Electric Bass (finger)']
                 }]
 
-                # Option to generate bass line
-                include_bass = input("Include bass line? (yes/no, default 'no'): ").strip().lower() or 'no'
-                bass_tracks = []
-                if include_bass == 'yes':
-                    bass_events = generate_bass_line(chords)
-                    bass_tracks = [{
-                        'name': 'Bass',
-                        'channel': 1,
-                        'events': bass_events,
-                        'instrument': instruments['Electric Bass (finger)']
-                    }]
+            # Output directory
+            root_note_formatted = root_note.replace('#', 'sharp').replace('b', 'flat')
+            scale_type_formatted = scale_type.replace(' ', '_')
+            key_folder = f"{root_note_formatted}_{scale_type_formatted}"
+            output_dir = os.path.join("Generated Midi", key_folder, "chords")
+            filename = f"chords_{key_folder}_{tempo}bpm.mid"
 
-                # Directory structure: Generated Midi/<Key>/chords/
-                key_folder = f"{root_note_formatted}_{scale_type_formatted}"
-                output_dir = os.path.join("Generated Midi", key_folder, "chords")
-                filename = f"chords_{key_folder}_{tempo}bpm.mid"
+            # Create MIDI file
+            all_tracks = tracks + bass_tracks
+            create_midi_file(all_tracks, output_dir=output_dir, filename=filename, tempo=tempo, time_signature=time_signature)
+            messagebox.showinfo("Success", f"Generated MIDI file: {os.path.join(output_dir, filename)}")
 
-                # Create MIDI file
-                all_tracks = tracks + bass_tracks
-                create_midi_file(all_tracks, output_dir=output_dir, filename=filename, tempo=tempo, time_signature=time_signature)
-                print(f"Generated MIDI file: {os.path.join(output_dir, filename)}")
-
-        elif generation_type == 'drums':
-            # Drum pattern generation
-            length = int(input("Enter the number of measures for the drum pattern (default 4): ") or "4")
-            tempo = int(input("Enter the tempo in BPM (default 120): ") or "120")
-            complexity = input("Enter 'simple' for a simple pattern or 'complex' for a complex pattern (default 'simple'): ").strip().lower() or 'simple'
-            if complexity not in ['simple', 'complex']:
-                print("Invalid complexity level. Choose 'simple' or 'complex'.")
-                return
-
-            drum_pattern = generate_drum_pattern(length, complexity)
-            # Directory structure: Generated Midi/drums/<complexity>/
+        elif part == 'drums':
+            complexity = messagebox.askquestion("Complexity", "Choose complexity:", icon='question', type='yesno', default='no')
+            complexity = 'complex' if complexity == 'yes' else 'simple'
+            drum_pattern = generate_drum_pattern(measures, complexity)
+            # Output directory
             output_dir = os.path.join("Generated Midi", "drums", complexity)
-            filename = f"drum_pattern_{complexity}_{tempo}bpm_{length}measures.mid"
+            filename = f"drum_pattern_{complexity}_{tempo}bpm_{measures}measures.mid"
 
             # Create MIDI file
             create_drum_midi_file(drum_pattern, output_dir=output_dir, filename=filename, tempo=tempo)
-            print(f"Generated MIDI file: {os.path.join(output_dir, filename)}")
+            messagebox.showinfo("Success", f"Generated MIDI file: {os.path.join(output_dir, filename)}")
 
         else:
-            print("Invalid generation type.")
-            return
+            messagebox.showerror("Error", "Invalid part selected.")
+
+    tk.Label(root, text="Choose generation type:").grid(row=0, column=0)
+    gen_type_var = tk.StringVar(root)
+    gen_type_var.set('song')
+    tk.OptionMenu(root, gen_type_var, 'song', 'melody', 'chords', 'drums', 'import').grid(row=0, column=1)
+
+    tk.Button(root, text="Next", command=show_options).grid(row=1, column=0, columnspan=2)
+
+    root.mainloop()
 
 if __name__ == "__main__":
-    main()
+    run_gui()
