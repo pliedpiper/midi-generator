@@ -85,9 +85,16 @@ def generate_melody(scale_notes, rhythm_pattern):
     """
     melody = []
     default_velocity = 100  # Default velocity
+    previous_note_index = random.randint(0, len(scale_notes) - 1)
     for duration in rhythm_pattern:
-        note = random.choice(scale_notes)
+        # Decide the next note based on previous note
+        move = random.choice([-2, -1, 0, 1, 2])  # Stepwise movement
+        next_note_index = previous_note_index + move
+        # Ensure index is within bounds
+        next_note_index = max(0, min(next_note_index, len(scale_notes) - 1))
+        note = scale_notes[next_note_index]
         melody.append({'note': note, 'duration': duration, 'velocity': default_velocity})
+        previous_note_index = next_note_index
     return melody
 
 def generate_chord_progression(scale_notes, progression_pattern, rhythm_pattern, chord_size=3):
@@ -117,19 +124,43 @@ def generate_chord_progression(scale_notes, progression_pattern, rhythm_pattern,
         chords.append({'notes': chord, 'duration': duration, 'velocity': default_velocity})
     return chords
 
-def generate_bass_line(chord_progression, time_signature, total_measures, bass_octave=2):
+def generate_bass_line(chord_progression, bass_octave=2):
     """
-    Generates a bass line with notes the length of a measure.
+    Generates a bass line with more interesting patterns.
     """
     bass_line = []
     default_velocity = 100  # Default velocity
-    beats_per_measure, _ = map(int, time_signature.split('/'))
-    measure_duration = beats_per_measure * 1  # Each beat is duration 1
 
-    for measure in range(total_measures):
-        chord = chord_progression[measure * beats_per_measure]
+    for chord in chord_progression:
         root_note = chord['notes'][0] - 12 * (4 - bass_octave)  # Adjust to bass octave
-        bass_line.append({'note': root_note, 'duration': measure_duration, 'velocity': default_velocity})
+        duration = chord['duration']
+        start_time = chord.get('start_time', 0)
+
+        # Decide on a pattern for the bass line
+        # For example, play on each beat within the chord's duration
+        beats = int(duration)
+        if beats == 0:
+            beats = 1  # Ensure at least one beat
+        sub_duration = duration / beats
+
+        current_time = start_time
+        for i in range(beats):
+            if i % 2 == 0:
+                note = root_note
+            else:
+                # Play a note from the chord or a fifth
+                if len(chord['notes']) > 1:
+                    note = chord['notes'][1] - 12 * (4 - bass_octave)
+                else:
+                    note = root_note + 7  # Perfect fifth
+            bass_line.append({
+                'note': note,
+                'duration': sub_duration,
+                'velocity': default_velocity,
+                'start_time': current_time
+            })
+            current_time += sub_duration
+
     return bass_line
 
 def generate_drum_pattern(length, complexity='simple'):
@@ -345,6 +376,8 @@ def main():
             chord_size = 3  # Triads
             section_rhythm = generate_steady_rhythm(section_length, time_signature)
             chords = generate_chord_progression(scale_notes, progression_pattern, section_rhythm, chord_size=chord_size)
+
+            # Assign start_time to chords
             for chord in chords:
                 chord['start_time'] = current_time
                 current_time += chord['duration']
@@ -372,14 +405,7 @@ def main():
 
             # Generate bass line
             if include_bass == 'yes':
-                # Total measures so far
-                total_measures = int(current_time / beats_per_measure)
-                bass_events = generate_bass_line(chords, time_signature, section_length)
-                current_time_bass = current_time - sum(section_rhythm)
-                for note in bass_events:
-                    note['start_time'] = current_time_bass
-                    current_time_bass += note['duration']
-
+                bass_events = generate_bass_line(chords)
                 bass_tracks.append({
                     'name': f'Bass',
                     'channel': 2,
@@ -495,6 +521,12 @@ def main():
 
             if generation_type == 'melody':
                 melody = generate_melody(scale_notes, rhythm_pattern)
+                # Calculate start_time for each note
+                current_time = 0
+                for note in melody:
+                    note['start_time'] = current_time
+                    current_time += note['duration']
+
                 tracks = [{
                     'name': 'Melody',
                     'channel': 0,
@@ -522,6 +554,13 @@ def main():
                 # Ask for chord size
                 chord_size = int(input("Enter the number of notes in each chord (e.g., 3 for triads, 4 for seventh chords, default 3): ") or "3")
                 chords = generate_chord_progression(scale_notes, progression_pattern, rhythm_pattern, chord_size=chord_size)
+
+                # Assign start_time to chords
+                current_time = 0
+                for chord in chords:
+                    chord['start_time'] = current_time
+                    current_time += chord['duration']
+
                 tracks = [{
                     'name': 'Chords',
                     'channel': 0,
@@ -533,7 +572,7 @@ def main():
                 include_bass = input("Include bass line? (yes/no, default 'no'): ").strip().lower() or 'no'
                 bass_tracks = []
                 if include_bass == 'yes':
-                    bass_events = generate_bass_line(chords, time_signature, rhythm_length)
+                    bass_events = generate_bass_line(chords)
                     bass_tracks = [{
                         'name': 'Bass',
                         'channel': 1,
